@@ -1,94 +1,87 @@
-// @TODO: Use the ./queue.js util for this.
 var posix= require("posix")
 var sys= require("sys");
 var utils= require("utils");
+var q= require("./queue");
+var path= require("path");
 
 var npmDir = process.ENV.PWD,
   HOME = process.ENV.HOME,
-  npm = require("../npm"),
-  queuePromise = new process.Promise();
- 
-exports.bootstrap = function bootstrap () {
-  process.stdio.writeError("npm: bootstrapping\n");
-  queuePromise.addCallback(function () {
-    process.stdio.write("ok");
-  });
-  next();
-}
+  npm = require("../npm");
 
-function statTester (thing, test, success, failure) {
-  return function () {
-    posix.stat(thing).addCallback(function (stats) {
-      return (stats[test]()) ? success.apply(this, arguments)
-        : failure.apply(this, arguments);
-    }).addErrback(failure);
+  function fail (msg) { return function () {
+      process.stdio.writeError("npm bootstrap failed: "+msg);
+  }};
+
+  function conditional_mkdir(dir_name, mode, failure) {
+      return function() {
+          var pm= new process.Promise();
+          posix.stat(dir_name)
+               .addErrback(function(){  // Need to create
+                   posix.mkdir(dir_name, mode)
+                        .addErrback(function() { pm.emitError() })
+                        .addCallback(function() { pm.emitSuccess() });                 
+               })
+               .addCallback(function(stats) { // Already exists
+                   if( stats.isDirectory() ) {
+                       pm.emitSuccess();
+                   }
+                   else {
+                       pm.emitError();
+                   }
+                });
+          pm.addErrback(failure);
+          return pm;
+      }
   };
-};
-// mkdir if not already existent.
-// Doesn't handle mkdir -p, which would be nice, but is not necessary for this
-function dirMaker (dir, mode, success, failure) {
-  return statTester(dir, "isDirectory", success, function () {
-    posix.mkdir(dir, mode).addErrback(failure).addCallback(success);
-  });
-};
 
-function fail (msg) { return function () {
-    process.stdio.writeError("npm bootstrap failed: "+msg);
-}}
+  function non_blocking_copy(src, dest, failure) {
+      return function() {
+          // try to copy the file over.
+          // seems like there oughtta be a process.fs.cp
+          var pm= new process.Promise();
+          if( failure ) {
+              pm.addErrback(failure);
+          }
+          posix.cat( src )
+               .addErrback(fail("couldn't read " + src))
+               .addCallback(function (content) {
+                   sys.puts(content);
+                   posix.open(dest, process.O_WRONLY | process.O_TRUNC | process.O_CREAT, 0666)
+                        .addErrback(fail("couldn't open "+dest+" for writing"))
+                        .addCallback(function (fd) {
+                            posix.write(fd, content, 0)
+                                 .addErrback(fail("couldn't write to "+ dest))
+                                 .addCallback(function(){pm.emitSuccess();})
+                        })
 
-function next () {
-  return script.shift()();
-}
-
-function done () {
-  queuePromise.emitSuccess();
-}
-
+               })
+          return pm;
+      }
+  };
+  
 
 var script = [
+  function () {
+      sys.puts("npm: bootstrapping");
+  },
+  
   // make sure that the ~/.node_libraries and ~/.npm exist.
-  dirMaker(require("path").join(HOME, ".node_libraries"), 0755, next, fail(
-    "couldn't create " +require("path").join(HOME, ".node_libraries")
-  )),
-  dirMaker(require("path").join(HOME, ".node_libraries","npm_libs"), 0755, next, fail(
-    "couldn't create " +require("path").join(HOME, ".node_libraries", "npm_libs")
-  )),
-  dirMaker(require("path").join(HOME, ".npm"), 0755, next, fail(
-    "couldn't create " + require("path").join(HOME, ".npm")
-  )),
-  // If no in ~/.npm/sources.json, then copy over the local one
-  statTester(
-    require("path").join(HOME, ".npm", "sources.json"), "isFile", next,
-    function () {
-      // try to copy the file over.
-      // seems like there oughtta be a process.fs.cp
-      posix.cat(
-        require("path").join(npmDir, "sources.json")
-      ).addErrback(fail(
-        "couldn't read " + require("path").join(npmDir, "sources.json")
-      )).addCallback(function (content) {
-        posix.open(
-          require("path").join(HOME, ".npm", "sources.json"),
-          process.O_WRONLY | process.O_TRUNC | process.O_CREAT,
-          0666
-        ).addErrback(fail(
-          "couldn't open "+require("path").join(HOME, ".npm", "sources.json")+" for writing"
-        )).addCallback(function (fd) {
-          posix.write(fd, content, 0).addErrback(fail(
-            "couldn't write to "+require("path").join(HOME, ".npm", "sources.json")
-          )).addCallback(next);
-        });
-      });
-    }
-  ),
+  conditional_mkdir(path.join(HOME, ".npm"), 0755, fail("couldn't create " + path.join(HOME, ".npm")) ),
+  conditional_mkdir(path.join(HOME, ".node_libraries"), 0755, fail("couldn't create " + path.join(HOME, ".node_libraries")) ),
+  non_blocking_copy(path.join(npmDir, "sources.json"), path.join(HOME, ".npm", "sources.json")),
   
   // call npm.install("--force", "npm")
   function () {
     npm.install("npm", {force : true}).addErrback(fail(
       "Failed installing npm with npm"
-    )).addCallback(next);
-  },
-  
-  done
+    ));
+  }
 ];
-  
+
+exports.bootstrap = function bootstrap () {
+  var bootStrapQueue=  q.queue(script, function(item) {
+      return item();
+  }).addCallback(function () {
+      process.stdio.write("ok");
+  });
+}
