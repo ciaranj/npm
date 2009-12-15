@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 
-require("./src/bootstrap.js").bootstrap();
+require("./src/bootstrap").bootstrap();

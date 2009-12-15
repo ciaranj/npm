@@ -1,5 +1,5 @@
 
-node.mixin(require("./utils.js"));
+process.mixin(require("./utils"));
 
 exports.queue = function queue (items, fn) {
   return new Queue(items, fn).start();
@@ -25,7 +25,7 @@ function Queue (items, fn, reverse) {
 function Queue_next () {
   if (this.items.length <= 0) return this.promise.emitSuccess(this.results);
   
-  var np = new node.Promise(),
+  var np = new process.Promise(),
     self = this;
   np.addCallback(function (key, args) {
     self.results[key] = args;
@@ -57,7 +57,7 @@ Queue.prototype = {
   start : function Queue_start () {
     if (this._started) return;
     this._started = true;
-    this.promise = new node.Promise();
+    this.promise = new process.Promise();
     this.promise.addCallback((function (q) { return function () {q.items=[]} })(this));
     return Queue_next.call(this);
   },

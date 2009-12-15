@@ -2,20 +2,20 @@
  * Fetch an HTTP url to a local file.
  **/
 
-var http = require("/http.js");
-
-node.mixin(require("./utils.js"));
+var http = require('http');
+var posix= require('posix');
+process.mixin(require("./utils"));
 
 exports.fetch = function fetch (remote, local, headers) {
-  var p = new node.Promise();
+  var p = new process.Promise();
   
   var uri = http.parseUri(remote);
   headers = headers || {};
   headers.Host = uri.host;
   
-  node.fs.open(
+  posix.open(
     local,
-    node.O_CREAT | node.O_WRONLY | node.O_TRUNC | node.O_APPEND | node.O_SYMLINK,
+    process.O_CREAT | process.O_WRONLY | process.O_TRUNC | process.O_APPEND | process.O_SYMLINK,
     0755
   ).addErrback(function () {
     p.emitError("could not open "+local+" for writing.");
@@ -35,7 +35,7 @@ function fetchAndWrite (remote, fd, p, headers, maxRedirects, redirects) {
   
   http
     .createClient(uri.port || (uri.protocol === "https" ? 443 : 80), uri.host)
-    .get(uri.path || "/", headers)
+    .request("GET", uri.path || "/", headers)
     .finish(function (response) {
       // handle redirects.
       var loc = get(response.headers, "location");
@@ -54,7 +54,7 @@ function fetchAndWrite (remote, fd, p, headers, maxRedirects, redirects) {
       // don't set the encoding, because we're just going to write the bytes as-is
       response.addListener("body", function (chunk) {
         // write the chunk...
-        node.fs.write(fd, chunk)
+        posix.write(fd, chunk)
           .addErrback(function () {
             p.emitError("write error");
           });

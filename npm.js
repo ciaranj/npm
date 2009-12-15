@@ -4,17 +4,19 @@
 // Use the split-up single-package files instead.
 
 var npm = exports;
-var http = require("/http.js");
+var http = require('http');
 
-node.mixin(require("/utils.js"));
-node.mixin(require("./src/queue.js"));
-node.mixin(require("./src/fetch.js"));
-
+process.mixin(require("./src/utils"));
+process.mixin(require("./src/queue"));
+process.mixin(require("./src/fetch"));
+var sys= require("sys");
+var posix= require("posix");
+var ENV= process.ENV;
 var CATALOG = {};
 var REQS = [], INSTALL_SET = {}, INSTALL_OPTS = {};
 
 function buildInstallSet (pkg) {
-  var p = new node.Promise();
+  var p = new process.Promise();
   var REQS = [pkg];
   var INSTALL_SET = {};
   var WAITING = 0;
@@ -53,8 +55,7 @@ function buildInstallSet (pkg) {
 
 
 npm.installPackages = function npm_installPackages (set, opt) {
-  var p = new node.Promise();
-  
+  var p = new process.Promise();
   stack(set, function (data, name) {
     return _install(name, data, opt)
       .addCallback(function () { log("installed" ,name) });
@@ -65,7 +66,7 @@ npm.installPackages = function npm_installPackages (set, opt) {
 };
 
 function _install (name, data, opt) {
-  var p = new node.Promise();
+  var p = new process.Promise();
   unpack(name, data, opt)
     .addErrback(fail(p, "Failed to unpack "+name))
     .addCallback(function () {
@@ -86,21 +87,20 @@ function _install (name, data, opt) {
 };
 
 function linkPkgLib (name, data) {
-  var p = new node.Promise();
+  var p = new process.Promise();
 
-  var targetFile = node.path.join(ENV.HOME, ".node_libraries", name+".js");
-  log("linking /"+name+".js to /"+name+"/" + data.lib, name);
+  var targetFile = require("path").join(ENV.HOME, ".node_libraries", name);
+  log("linking /"+name+" to /"+name+"/" + data.lib, name);
   
-  var relPath = [ENV.HOME, ".node_libraries", name].concat(data.lib.split("/"));
-  relPath = node.path.join.apply(node.path, relPath);
+  var relPath = [ENV.HOME, ".node_libraries", "npm_libs", name].concat(data.lib.split("/"));
+  relPath = require("path").join.apply(process.path, relPath);
   relPath = relPath.replace(/"/g, "\\\"");
-  
-  node.fs.open(targetFile,
-    node.O_CREAT | node.O_TRUNC | node.O_WRONLY,
+  posix.open(targetFile,
+    process.O_CREAT | process.O_TRUNC | process.O_WRONLY,
     0755
   ).addErrback(fail(p, "Couldn't create "+targetFile))
     .addCallback(function (fd) {
-      node.fs.write(fd, '__module.exports = require("'+relPath+'");\n')
+      posix.write(fd, '__module.exports = require("'+relPath+'");\n')
         .addErrback(fail(p, "Couldn't write code to "+targetFile))
         .addCallback(method(p, "emitSuccess"));
     });
@@ -109,17 +109,17 @@ function linkPkgLib (name, data) {
 };
 function buildPkg (name, data) {
   log(data.build, name);
-  var p = new node.Promise();
+  var p = new process.Promise();
   
   // exec("cd "+
-  // node.path.join(ENV.HOME, ".node_libraries", name+".js")
+  // require("path").join(ENV.HOME, ".node_libraries", name+".js")
   // )
   setTimeout(method(p, "emitSuccess"));
   return p;
 };
 function startPkg (name, data) {
   log("buildPkg " + data.start, name);
-  var p = new node.Promise();
+  var p = new process.Promise();
   setTimeout(method(p, "emitSuccess"));
   return p;
 };
@@ -127,13 +127,13 @@ function startPkg (name, data) {
 
 // unpack to $HOME/.node_libraries/<package>/
 function unpack (name, data, opt) {
-  var p = new node.Promise();
+  var p = new process.Promise();
   log("");
   log(name, "install");
   // fetch the tarball
   var tarball = data.tarball;
   var uri = http.parseUri(tarball);
-  var target = node.path.join(ENV.HOME, ".npm", name+".tgz");
+  var target = require("path").join(ENV.HOME, ".npm", name+".tgz");
   fetch(tarball, target)
     .addErrback(function (m) {
       log("could not fetch "+tarball, "failure");
@@ -141,10 +141,10 @@ function unpack (name, data, opt) {
       p.emitError();
     })
     .addCallback(function () {
-      var targetFolder = node.path.join(ENV.HOME, ".npm", name);
-      var finalTarget = node.path.join(ENV.HOME, ".node_libraries", name);
+      var targetFolder = require("path").join(ENV.HOME, ".npm", name);
+      var finalTarget = require("path").join(ENV.HOME, ".node_libraries", "npm_libs", name);
       var staging = targetFolder + "-staging";
-      
+
       // TODO: Break this up.
       queue([
         "rm -rf "+targetFolder,
@@ -156,7 +156,7 @@ function unpack (name, data, opt) {
         "rm -rf " + finalTarget,
         "mv " + targetFolder + " " + finalTarget
       ], function (cmd) {
-        return exec("/usr/bin/env bash -c '"+cmd+"'");
+        return sys.exec("/usr/bin/env bash -c '"+cmd+"'");
       }).addCallback(function (results) {
           log(name, "unpacked");
           p.emitSuccess();
@@ -173,9 +173,8 @@ function unpack (name, data, opt) {
 };
 
 npm.install = function npm_install (pkg, opt) {
-  var p = new node.Promise();
+  var p = new process.Promise();
   opt = opt || {};
-  
   buildInstallSet(pkg)
     .addErrback(fail(p,"Failed building requirements for "+pkg))
     .addCallback(function (set) {
@@ -193,7 +192,7 @@ npm.install = function npm_install (pkg, opt) {
 
 npm.readCatalog = function npm_readCatalog (pkg) {
   
-  var p = new node.Promise();
+  var p = new process.Promise();
   
   npm.getSources()
     .addErrback(fail(p, "Could not load sources"))
@@ -204,7 +203,7 @@ npm.readCatalog = function npm_readCatalog (pkg) {
         var url = source.replace(/\{name\}/gi, pkg);
         log("Fetching package data from "+url);
         try {
-          var parsePromise = new node.Promise();
+          var parsePromise = new process.Promise();
           http.cat(url).addCallback(function (d) {
             try {
               d = JSON.parse(d);
@@ -229,22 +228,22 @@ npm.readCatalog = function npm_readCatalog (pkg) {
 
 npm.writeCatalog = function npm_writeCatalog () {
   log("writing catalog");
-  var p = new node.Promise();
+  var p = new process.Promise();
   
-  node.fs.open(
-    node.path.join(ENV.HOME, ".npm", "catalog.json"),
-    node.O_WRONLY | node.O_TRUNC | node.O_CREAT,
+  process.fs.open(
+    require("path").join(ENV.HOME, ".npm", "catalog.json"),
+    process.O_WRONLY | process.O_TRUNC | process.O_CREAT,
     0666
   ).addErrback(fail(p,
-    "couldn't open "+node.path.join(ENV.HOME, ".npm", "catalog.json")+" for writing"
+    "couldn't open "+require("path").join(ENV.HOME, ".npm", "catalog.json")+" for writing"
   )).addCallback(function (fd) {
     try {
       var data = JSON.stringify(CATALOG);
     } catch (ex) {
       return fail(p, "Couldn't stringify catalog data")();
     }
-    node.fs.write(fd, data, 0).addErrback(fail(p,
-      "couldn't write to "+node.path.join(ENV.HOME, ".npm", "catalog.json")
+    process.fs.write(fd, data, 0).addErrback(fail(p,
+      "couldn't write to "+require("path").join(ENV.HOME, ".npm", "catalog.json")
     )).addCallback(function () { p.emitSuccess() });
   });
   
@@ -252,11 +251,11 @@ npm.writeCatalog = function npm_writeCatalog () {
 };
 
 npm.getSources = function npm_getSources () {
-  var p = new node.Promise();
-  node.fs.cat(node.path.join(ENV.HOME, ".npm", "sources.json"))
+  var p = new process.Promise();
+  posix.cat(require("path").join(ENV.HOME, ".npm", "sources.json"))
     .addErrback(function () {
       p.emitError(new Error(
-        "Couldn't read " + node.path.join(ENV.HOME, ".npm", "sources.json") + "\n"
+        "Couldn't read " + require("path").join(ENV.HOME, ".npm", "sources.json") + "\n"
       ));
     })
     .addCallback(function (data) {
@@ -276,10 +275,10 @@ function merge (dest, src) {
 };
 
 function dummyPromise (name) {
-  var promise = new node.Promise();
+  var promise = new process.Promise();
   name = name || arguments.callee.caller.name;
   setTimeout(function () {
-    node.stdio.writeError("TODO: implement "+ name + "\n");
+    process.stdio.writeError("TODO: implement "+ name + "\n");
     promise.emitSuccess("dummy");
   });
   return promise;
