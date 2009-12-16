@@ -45,7 +45,6 @@ var npmDir = process.ENV.PWD,
           posix.cat( src )
                .addErrback(fail("couldn't read " + src))
                .addCallback(function (content) {
-                   sys.puts(content);
                    posix.open(dest, process.O_WRONLY | process.O_TRUNC | process.O_CREAT, 0666)
                         .addErrback(fail("couldn't open "+dest+" for writing"))
                         .addCallback(function (fd) {
