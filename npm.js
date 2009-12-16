@@ -89,18 +89,18 @@ function _install (name, data, opt) {
 function linkPkgLib (name, data) {
   var p = new process.Promise();
 
-  var targetFile = require("path").join(ENV.HOME, ".node_libraries", name);
+  var targetFile = require("path").join(ENV.HOME, ".node_libraries", name +".js");
   log("linking /"+name+" to /"+name+"/" + data.lib, name);
   
-  var relPath = [ENV.HOME, ".node_libraries", "npm_libs", name].concat(data.lib.split("/"));
-  relPath = require("path").join.apply(process.path, relPath);
+  var relPath = [ENV.HOME, ".node_libraries", name].concat(data.lib.split("/"));
+  relPath = require("path").join.apply(require("path"), relPath);
   relPath = relPath.replace(/"/g, "\\\"");
   posix.open(targetFile,
     process.O_CREAT | process.O_TRUNC | process.O_WRONLY,
     0755
   ).addErrback(fail(p, "Couldn't create "+targetFile))
     .addCallback(function (fd) {
-      posix.write(fd, '__module.exports = require("'+relPath+'");\n')
+      posix.write(fd, 'module.exports = require("'+relPath+'");\n')
         .addErrback(fail(p, "Couldn't write code to "+targetFile))
         .addCallback(method(p, "emitSuccess"));
     });
@@ -142,7 +142,7 @@ function unpack (name, data, opt) {
     })
     .addCallback(function () {
       var targetFolder = require("path").join(ENV.HOME, ".npm", name);
-      var finalTarget = require("path").join(ENV.HOME, ".node_libraries", "npm_libs", name);
+      var finalTarget = require("path").join(ENV.HOME, ".node_libraries", name);
       var staging = targetFolder + "-staging";
 
       // TODO: Break this up.
