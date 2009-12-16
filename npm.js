@@ -11,6 +11,8 @@ process.mixin(require("./src/queue"));
 process.mixin(require("./src/fetch"));
 var sys= require("sys");
 var posix= require("posix");
+var path= require("path");
+
 var ENV= process.ENV;
 var CATALOG = {};
 var REQS = [], INSTALL_SET = {}, INSTALL_OPTS = {};
@@ -89,12 +91,13 @@ function _install (name, data, opt) {
 function linkPkgLib (name, data) {
   var p = new process.Promise();
 
-  var targetFile = require("path").join(ENV.HOME, ".node_libraries", name +".js");
+  var targetFile = path.join(ENV.HOME, ".node_libraries", name +".js");
   log("linking /"+name+" to /"+name+"/" + data.lib, name);
   
   var relPath = [ENV.HOME, ".node_libraries", name].concat(data.lib.split("/"));
-  relPath = require("path").join.apply(require("path"), relPath);
+  relPath = path.join.apply(path, relPath);
   relPath = relPath.replace(/"/g, "\\\"");
+  relPath = relPath.replace(/\.js$/, "");
   posix.open(targetFile,
     process.O_CREAT | process.O_TRUNC | process.O_WRONLY,
     0755
